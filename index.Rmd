@@ -1,0 +1,651 @@
+---
+title: "DATA1001"
+subtitle: "Clustering"
+author: "Peter Straka"
+date: "Week 13, 2018-10-22"
+output:
+  xaringan::moon_reader:
+    mathjax: "https://cdn.bootcss.com/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_HTMLorMML"
+    lib_dir: libs
+    nature:
+      highlightStyle: github
+      highlightLines: true
+      countIncrementalSlides: false
+
+
+
+---
+
+```{r setup, echo=FALSE}
+options(htmltools.dir.version = FALSE)
+knitr::opts_chunk$set(comment=NA, fig.width=10, fig.height=6, message=FALSE, cache=TRUE)
+```
+
+
+
+## Packages
+
+In these slides, we use the following R packages: 
+
+```{r, message=FALSE}
+library(tidyverse)
+library(ISLR)
+library(cluster)
+library(readr)
+```
+
+---
+
+## Unsupervised Learning 
+
+Machine learning approaches which create insight from data that is not 
+necessarily used for prediction of outcomes, broadly fall into the category 
+"unsupervised". 
+
+Unlike for supervised learning, there is no "output" variable, and it is 
+often not clear how to assess when unsupervised learning has been successful. 
+
+Outcomes of unsupervised learning approaches: 
+
+* representation of data in a way that is more informative for humans
+* summarising data (reduce "description length")
+* finding patterns in data / extracting useful features
+* detecting outliers
+* ...
+
+---
+
+# What is Clustering?
+
+Given a data frame, we want to _group together similar rows_. 
+Each group is then called a **cluster**, the division into groups a 
+**clustering**.
+
+So we need to clarify:
+
+* (Dis)similarity. How do we quantify if two rows are similar? 
+* How do we quantify the goodness of a clustering? 
+* How many clusters should there be? 
+* How do we compute a clustering? 
+
+--
+
+Then the outcome is a categorization of data. It 
+
++ summarizes data
++ is informative for humans
++ displays typical and untypical observations
+
+---
+class: center
+
+```{r, fig.width=8, fig.height=8, echo=FALSE}
+plot(x=ruspini$y, y=ruspini$x)
+```
+
+---
+class: center
+
+```{r, fig.width=8, fig.height=8, echo=FALSE}
+plot(pam(ruspini, 4), ask = FALSE, which.plots = 1)
+```
+
+---
+
+## Notation
+
+We write $x_n$ for the $n$-th row in a dataframe with $N$ rows. 
+
+A clustering into a number $K$ of clusters is a collection of disjoint sets
+$C_1, \ldots, C_K$ such that 
+
+$$C_1 \cup \ldots \cup C_K = \{1, \ldots, N\}$$
+
+Disjoint means that $C_j \cap C_k = \{\}$. 
+
+--
+
+For example, a clustering of a dataframe with 7 rows would be given by
+$C_1 = \{1,4,5\}, C_2 = \{2, 7\}, C_3 = \{3, 6\}$. 
+
+--
+
+The above clustering will be "good", if $x_1, x_4, x_5$ are close together, 
+respectively $x_2, x_7$ and $x_3, x_6$;
+
+and the distances of observations in different clusters, e.g. $x_4$ and $x_7$, 
+are "not as close" together. 
+
+---
+
+## Distance for continuous, non-missing Data
+
+Example:
+
+```{r, echo=FALSE}
+head(data.frame(V1=ruspini$x, V2=ruspini$y), 3)
+```
+
+How dissimilar are rows 1 & 2? 
+
+--
+
+We can use any distance function, e.g. euclidean distance: 
+
+$$
+d(x_1, x_2) = \sqrt{(x_1 - x_2)^2} 
+$$
+$$
+= \sqrt{(4-5)^2 + (53-63)^2} = \sqrt{101} = `r sqrt(101)`
+$$
+
+---
+
+
+## Within-cluster variation
+
+Write $|C_k|$ for the number of observations in cluster $C_k$, and define the 
+"within-cluster" variation
+
+$$W(C_k) = \frac{1}{|C_k|} \sum_{i, j \in C_k} d(x_i, x_j)^2$$
+
+Above, the sum runs over all possible pairs $x_i, x_j$ in cluster $C_k$. 
+
+--
+
+If $W(C_k)$ is small, the cluster is "good", because it is tightly packed.
+
+---
+
+## Objective function
+
+We want to minimize $W(C_k)$ for all clusters $C_1, \ldots, C_K$, but how?
+
+--
+
+Set the goal to minimize
+
+$$\sum_{k=1}^K W(C_k)$$
+
+--
+
+This is a function whose value depends on the cluster assignment of each
+$x_n$. How many possible assignments are there? 
+
+--
+
+Roughly $K^N$, which is too many to check individually. 
+
+
+---
+
+## Computational trick
+
+As it turns out, 
+
+$$W(C_k) = 2 \sum_{i\in C_k} d(x_i, m_k)^2$$
+
+where
+
+$$m_k = \frac{1}{C_k} \sum_{i \in C_k} x_i$$
+
+is called the **centroid** of cluster $k$. Think of it as the
+point of gravity of cluster $k$.
+
+
+---
+
+## Centroids
+
+```{r, echo=FALSE}
+foo <- pam(ruspini, 4)
+ruspini$k <- foo$clustering %>% as.factor()
+p <- ruspini %>% 
+  mutate(size = 3) %>% 
+  ggplot(aes(x=y, y=x, col=k)) + geom_point(size=3)
+p
+```
+
+---
+
+## Centroids
+
+```{r, echo=FALSE}
+M <- sapply(1:4, function(k)
+  apply(X = ruspini[ruspini$k == k, 1:2], MARGIN = 2, FUN = mean)) %>%
+  t() %>% as.data.frame()
+
+M$k <- factor(1:4)
+
+p + geom_point(data = M, size = 10, alpha = 0.5)
+```
+
+
+---
+
+## K-means algorithm
+
+> 1. Randomly assign a number, from $1$ to $K$, to each of the observations.
+These serve as initial cluster assignments for the observations. 
+
+> 2. Iterate until the cluster assignments stop changing:
+
+>   (a) For each of the $K$ clusters, compute the cluster centroid: take the mean of each component of observations in the $k$th cluster
+
+>   (b) Assign each observation to the cluster whose centroid is closest (where closest is defined using Euclidean distance).
+
+--
+
+Neither (a) nor (b) can increase the objective function!
+
+* $m_k$ minimizes $\sum_{i \in C_k} d(x_i, m_k)^2$
+* Overall sum of squared distances can only decrease if each observation is assigned to its nearest centroid. 
+
+
+---
+
+## Example
+
+Let $K=2$,
+
+```{r, echo=FALSE}
+data.frame(V1=c(10,11,2,2), V2=c(11,11,2,3))
+```
+
+and assume that random cluster assignment after step 1 was 
+
+$C_1 = \{1,3\}$, $C_2 = \{2, 4\}$.
+
+Step through the k-means algorithm until convergence. 
+
+
+---
+
+## Example
+
+<iframe src="https://upload.wikimedia.org/wikipedia/commons/7/7c/K-means_convergence_to_a_local_minimum.png" width="100%" height="500"></iframe>
+
+
+---
+
+## wholesale Data
+
+```{r load_data, echo=FALSE}
+# wholesale <- read_csv("https://archive.ics.uci.edu/ml/machine-learning-databases/00292/Wholesale%20customers%20data.csv")
+wholesale <- read_csv("../../data/wholesale.csv")
+```
+
+```{r get_pairs, echo=FALSE}
+for (v in c("Region", "Channel")) {
+  wholesale[[v]] <- factor(wholesale[[v]])
+}
+wholesale %>% select(-(1:2)) %>%
+  GGally::ggpairs(aes(alpha = 0.3))
+```
+
+
+---
+
+## `stats::kmeans`
+
+```{r}
+km1 <- kmeans(wholesale[ , -(1:2)], 3)
+str(km1)
+```
+
+---
+
+The centroids found are:
+
+```{r}
+km1$centers
+```
+
+
+---
+
+## wholesale Data clustered
+
+```{r, echo=FALSE}
+wholesale$k <- factor(km1$cluster)
+wholesale %>% select(-(1:2)) %>% GGally::ggpairs(aes(col=k, alpha = 0.3))
+```
+
+---
+
+## How many clusters?
+
+```{r, echo=FALSE}
+sapply(2:10, function(k) {
+  km <- kmeans(wholesale[ , -(1:2)], k)
+  km$tot.withinss
+}) %>% 
+  data.frame(ss=., k=1:length(.)) %>%
+  ggplot(aes(x=k, y=ss)) + geom_line() + geom_point()
+```
+
+
+
+---
+
+## Category sales by cluster
+
+```{r, echo=FALSE}
+km2 <- kmeans(wholesale[ , -(1:2)], 4)
+wholesale$k <- factor(km2$cluster)
+wholesale %>% 
+  select(-c("Channel", "Region")) %>%
+  gather(key = "key", value = "sales", -k) %>%
+  ggplot(aes(x=key, y=sales, fill=key)) + 
+  geom_boxplot(alpha = 0.5) + facet_wrap(vars(k))
+```
+
+
+---
+class: inverse, middle
+
+# Categorical data & missing data
+
+We generalize the K-means approach.
+
+---
+
+## Clustering with categorical data
+
+.pull-left[
+
+```{r animals, echo=FALSE}
+df <- cluster::animals
+for (v in names(df)) {
+  df[[v]] <- ifelse(df[[v]]==1, "No", "Yes") %>% factor()
+}
+df
+```
+]
+
+.pull-right[
+
+<iframe src="https://stat.ethz.ch/R-manual/R-devel/library/cluster/html/animals.html" height="500" width="100%"></iframe>
+
+]
+
+
+
+---
+
+## Gower distance
+
+Let's compare spider and cow: 
+
+```{r}
+animals[c("spi", "cow"), ]
+```
+
++ How many non-matching categorical variables are there? 
++ Divide by number of comparisons that can be made. 
+
+We get $d({\rm spi}, {\rm cow}) = 3/5 = 0.6$. 
+
+--
+
+Calculate this for all possible pairs: 
+
+---
+
+```{r}
+df %>% daisy(metric="gower") %>% round(2) 
+```
+
+---
+
+## Medoids
+
+Given a clustering, a **medoid** $m_k$ of cluster $k$ 
+is an _observation_ that has the smallest summed distance to all other 
+observations in that cluster. 
+
+That is, $m_k$ is the $x_j$ that satisfies $j \in C_k$ and that minimizes 
+
+$$\sum_{i \in C_k} d(x_j, x_i).$$
+
+(In 1-D data, a medoid is sort of the same as the **median**.)
+
+---
+
+## Medoids
+
+```{r, echo=FALSE}
+pam_ruspini <- pam(ruspini, 4)
+M <- pam_ruspini$medoids %>% data.frame()
+M$k <- factor(M$k)
+
+ruspini %>% ggplot(aes(x=y, y=x, col=k)) + 
+  geom_point() +
+  geom_point(aes(x=y, y=x, col=k), data = M, size=10, alpha = 0.5)
+```
+
+
+
+---
+
+## K-medoids algorithm
+
+> 1. Randomly assign a number, from $1$ to $K$, to each of the observations.
+These serve as initial cluster assignments for the observations. 
+
+> 2. Iterate until the cluster assignments stop changing:
+
+>   (a) For each of the $K$ clusters, compute the cluster medoid $m_k$, i.e. the observation with the smallest summed distance to all other observations in the cluster.
+
+>   (b) Assign each observation $x_n$ to the cluster $k$ whose medoid $m_k$ is the closest.
+
+--
+
+Again, neither (a) nor (b) can increase the objective function.
+
+* $m_k$ minimizes $\sum_{i \in C_k} d(m_k, x_i)$
+* Overall sum of squared distances can only decrease if each observation is assigned to its nearest medoid. 
+
+
+---
+
+## K-means vs K-medoids
+
++ K-medoids works with _any_ distance function
++ The computational complexity of K-means is $\mathcal O(N)$, whereas for K-medoids it is $\mathcal O(N^2)$. 
+
+The latter means that if you double the size of the dataset $N \to 2N$, then K-means will need roughly double the computational steps, whereas 
+K-medoids will need 4 times as many. This is problematic for large datasets.
+
+
+---
+
+## `cluster::pam`
+
+The function `cluster::pam` ("Partitioning Around Medoids") sort of implements K-medoids:
+
+```{r}
+(pam_animal <- (daisy_animal <- df %>% daisy(metric="gower")) %>% pam(4))
+```
+
+---
+
+## Medoid animals
+
+The medoid animals are
+
+```{r}
+animals[pam_animal$medoids, ]
+```
+
+and the clusters of the animals are 
+
+```{r}
+sort(pam_animal$clustering)
+```
+
+---
+
+## Silhouettes
+
+For each observation $i$, the silhouette width $s(i)$ is defined as follows: 
+
++ Put $a(i) =$ average dissimilarity between $i$ and all other points of the cluster to which $i$ belongs (if $i$ is the only observation in its cluster, $s(i) = 0$ without further calculations). 
++ For all other clusters $C$, put $d(i,C) =$ average dissimilarity of $i$ to all observations of $C$. 
++ The smallest of these $d(i,C)$ is $b(i) := \min_C d(i,C)$, and can be seen as the dissimilarity between $i$ and its "neighbor" cluster, i.e., the nearest one to which it does not belong. 
++ Finally,
+$$s(i) := \frac{b(i) - a(i)}{\max\{a(i), b(i)\}}$$
+
+> Note: 
+
+> + $-1 \le s(i) \le +1$ always.  
+> + Values near +1 (resp. 0, resp. -1) mean the medoid is much closer (resp. equally close, resp. further away) than the average neighbouring cluster. 
+
+---
+
+```{r}
+pam_animal %>% plot()
+```
+
+
+Average silhouette width can be used as a quality measure for the clustering.
+
+---
+
+## `sapply`
+
+Write a function that maps the output of `pam` to the silhouette width:
+
+```{r}
+get_sil_width <- function(K) {
+  pam_obj <- df %>% daisy(metric = "gower") %>% pam(K)
+  pam_obj$silinfo$avg.width %>% round(2)
+}
+```
+
+Apply this function to `2:10` = `r 2:10`:
+
+```{r}
+sapply(2:10, get_sil_width)
+```
+
+The "best" clustering with $K=3$ is below (I prefer $K=4$):
+
+```{r}
+(df %>% daisy(metric = "gower") %>% pam(3))$clustering %>% sort()
+```
+
+
+---
+
+## Clustering mixed (categorical and continuous) data
+
+The Gower distance on continuous continuous variables is defined by 
+transformation to the interval $[0,1]$:
+
++ subtract the minimum value
++ divide by the range, e.g.
+
+```{r, fig.height=4}
+x <- wholesale$Milk
+x_trans <- (x - min(x)) / (max(x) - min(x)) 
+data.frame(Milk = x_trans) %>% ggplot(aes(x=Milk)) + geom_histogram(fill="gray")
+```
+
+---
+
+## Full wholesale data
+
+```{r, message=FALSE}
+daisy_wholesale <- wholesale %>% daisy("gower")
+(pam_wholesale <- daisy_wholesale %>% pam(3)) %>% plot()
+```
+
+
+---
+
+```{r mixture_clusters}
+wholesale$k <- factor(pam_wholesale$clustering)
+wholesale %>% GGally::ggpairs(aes(col=k, alpha = 0.5))
+```
+
+
+---
+
+## Weighting variables 
+
+By default, the gower distance weights all variables equally.
+Here is the cluster assignment with weights 0.2 for Channel and Region, and 0.1 for the rest:
+
+```{r reweight, echo=FALSE}
+w_wh <- rep(0, 8)
+names(w_wh) <- wholesale %>% select(-k) %>% names()
+w_wh[1:2] <- 0.2
+w_wh[-(1:2)] <- 0.1
+wholesale$k <- (wholesale %>% select(-k) %>% 
+  daisy("gower", weights = w_wh) %>%
+  pam(3))$clustering %>% factor()
+wholesale %>% GGally::ggpairs(aes(col=k, alpha = 0.5))
+```
+
+
+---
+class: middle, inverse
+
+# Hierarchical clustering
+
+Two approaches: 
+
++ Bottom-up, or agglomerative clustering
++ Top-down, or divisive clustering
+
+We discuss the former. 
+
+
+---
+
+## Agglomerative Clustering
+
+> 1. Begin with $N$ observations and a measure (such as Euclidean or Gower distance) of all the $N(N-1)/2$ pairwise dissimilarities. Treat each observation as its own cluster. 
+> 2. For $i = N,N−1,\ldots ,2$:
+
+>   (a) Examine all pairwise inter-cluster dissimilarities among the $i$ clusters and identify the pair of clusters that are least dissimilar (that is, most similar). Fuse these two clusters. The dissimilarity between these two clusters indicates the height in the dendrogram at which the fusion should be placed.
+
+>   (b) Compute the new pairwise inter-cluster dissimilarities among the $i − 1$ remaining clusters.
+
+
+---
+
+## Dissimilarity between clusters
+
++ "Complete": 
+Maximal intercluster dissimilarity. Compute all pairwise dissimilarities between the observations in cluster A and the observations in cluster B, and record the largest of these dissimilarities.
++ "Single": 
+Minimal intercluster dissimilarity. Compute all pairwise dissimilarities between the observations in cluster A and the observations in cluster B, and record the smallest of these dissimilarities. Single linkage can result in extended, trailing clusters in which single observations are fused one-at-a-time.
++ "Average": 
+Mean intercluster dissimilarity. Compute all pairwise dissimilarities between the observations in cluster A and the observations in cluster B, and record the average of these dissimilarities.
+
+---
+
+```{r}
+daisy_animal %>% agnes(method = "complete") %>% plot(which.plots=2)
+```
+
+For plotting details, look up `?plot.agnes`.
+
+
+---
+
+## R packages on clustering 
+
+<iframe src="https://cran.r-project.org/web/views/Cluster.html" height="500" width="100%"></iframe> 
+
+
+---
+class: inverse, middle
+
+## References
+
+1. [Introduction to Statistical Learning in R](https://www-bcf.usc.edu/~gareth/ISL/), Section 10.3
+
+2. `help(package = "cluster")` for documentation on the R package `cluster`

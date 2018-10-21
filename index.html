@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>DATA1001</title>
+    <meta charset="utf-8">
+    <meta name="author" content="Peter Straka" />
+    <link href="libs/remark-css/default.css" rel="stylesheet" />
+    <link href="libs/remark-css/default-fonts.css" rel="stylesheet" />
+  </head>
+  <body>
+    <textarea id="source">
+class: center, middle, inverse, title-slide
+
+# DATA1001
+## Clustering
+### Peter Straka
+### Week 13, 2018-10-22
+
+---
+
+
+
+
+
+
+## Packages
+
+In these slides, we use the following R packages: 
+
+
+```r
+library(tidyverse)
+library(ISLR)
+library(cluster)
+library(readr)
+```
+
+---
+
+## Unsupervised Learning 
+
+Machine learning approaches which create insight from data that is not 
+necessarily used for prediction of outcomes, broadly fall into the category 
+"unsupervised". 
+
+Unlike for supervised learning, there is no "output" variable, and it is 
+often not clear how to assess when unsupervised learning has been successful. 
+
+Outcomes of unsupervised learning approaches: 
+
+* representation of data in a way that is more informative for humans
+* summarising data (reduce "description length")
+* finding patterns in data / extracting useful features
+* detecting outliers
+* ...
+
+---
+
+# What is Clustering?
+
+Given a data frame, we want to _group together similar rows_. 
+Each group is then called a **cluster**, the division into groups a 
+**clustering**.
+
+So we need to clarify:
+
+* (Dis)similarity. How do we quantify if two rows are similar? 
+* How do we quantify the goodness of a clustering? 
+* How many clusters should there be? 
+* How do we compute a clustering? 
+
+--
+
+Then the outcome is a categorization of data. It 
+
++ summarizes data
++ is informative for humans
++ displays typical and untypical observations
+
+---
+class: center
+
+![](index_files/figure-html/unnamed-chunk-2-1.png)&lt;!-- --&gt;
+
+---
+class: center
+
+![](index_files/figure-html/unnamed-chunk-3-1.png)&lt;!-- --&gt;
+
+---
+
+## Notation
+
+We write `\(x_n\)` for the `\(n\)`-th row in a dataframe with `\(N\)` rows. 
+
+A clustering into a number `\(K\)` of clusters is a collection of disjoint sets
+`\(C_1, \ldots, C_K\)` such that 
+
+`$$C_1 \cup \ldots \cup C_K = \{1, \ldots, N\}$$`
+
+Disjoint means that `\(C_j \cap C_k = \{\}\)`. 
+
+--
+
+For example, a clustering of a dataframe with 7 rows would be given by
+`\(C_1 = \{1,4,5\}, C_2 = \{2, 7\}, C_3 = \{3, 6\}\)`. 
+
+--
+
+The above clustering will be "good", if `\(x_1, x_4, x_5\)` are close together, 
+respectively `\(x_2, x_7\)` and `\(x_3, x_6\)`;
+
+and the distances of observations in different clusters, e.g. `\(x_4\)` and `\(x_7\)`, 
+are "not as close" together. 
+
+---
+
+## Distance for continuous, non-missing Data
+
+Example:
+
+
+```
+  V1 V2
+1  4 53
+2  5 63
+3 10 59
+```
+
+How dissimilar are rows 1 &amp; 2? 
+
+--
+
+We can use any distance function, e.g. euclidean distance: 
+
+$$
+d(x_1, x_2) = \sqrt{(x_1 - x_2)^2} 
+$$
+$$
+= \sqrt{(4-5)^2 + (53-63)^2} = \sqrt{101} = 10.0498756
+$$
+
+---
+
+
+## Within-cluster variation
+
+Write `\(|C_k|\)` for the number of observations in cluster `\(C_k\)`, and define the 
+"within-cluster" variation
+
+`$$W(C_k) = \frac{1}{|C_k|} \sum_{i, j \in C_k} d(x_i, x_j)^2$$`
+
+Above, the sum runs over all possible pairs `\(x_i, x_j\)` in cluster `\(C_k\)`. 
+
+--
+
+If `\(W(C_k)\)` is small, the cluster is "good", because it is tightly packed.
+
+---
+
+## Objective function
+
+We want to minimize `\(W(C_k)\)` for all clusters `\(C_1, \ldots, C_K\)`, but how?
+
+--
+
+Set the goal to minimize
+
+`$$\sum_{k=1}^K W(C_k)$$`
+
+--
+
+This is a function whose value depends on the cluster assignment of each
+`\(x_n\)`. How many possible assignments are there? 
+
+--
+
+Roughly `\(K^N\)`, which is too many to check individually. 
+
+
+---
+
+## Computational trick
+
+As it turns out, 
+
+`$$W(C_k) = 2 \sum_{i\in C_k} d(x_i, m_k)^2$$`
+
+where
+
+`$$m_k = \frac{1}{C_k} \sum_{i \in C_k} x_i$$`
+
+is called the **centroid** of cluster `\(k\)`. Think of it as the
+point of gravity of cluster `\(k\)`.
+
+
+---
+
+## Centroids
+
+![](index_files/figure-html/unnamed-chunk-5-1.png)&lt;!-- --&gt;
+
+---
+
+## Centroids
+
+![](index_files/figure-html/unnamed-chunk-6-1.png)&lt;!-- --&gt;
+
+
+---
+
+## K-means algorithm
+
+&gt; 1. Randomly assign a number, from `\(1\)` to `\(K\)`, to each of the observations.
+These serve as initial cluster assignments for the observations. 
+
+&gt; 2. Iterate until the cluster assignments stop changing:
+
+&gt;   (a) For each of the `\(K\)` clusters, compute the cluster centroid: take the mean of each component of observations in the `\(k\)`th cluster
+
+&gt;   (b) Assign each observation to the cluster whose centroid is closest (where closest is defined using Euclidean distance).
+
+--
+
+Neither (a) nor (b) can increase the objective function!
+
+* `\(m_k\)` minimizes `\(\sum_{i \in C_k} d(x_i, m_k)^2\)`
+* Overall sum of squared distances can only decrease if each observation is assigned to its nearest centroid. 
+
+
+---
+
+## Example
+
+Let `\(K=2\)`,
+
+
+```
+  V1 V2
+1 10 11
+2 11 11
+3  2  2
+4  2  3
+```
+
+and assume that random cluster assignment after step 1 was 
+
+`\(C_1 = \{1,3\}\)`, `\(C_2 = \{2, 4\}\)`.
+
+Step through the k-means algorithm until convergence. 
+
+
+---
+
+## Example
+
+&lt;iframe src="https://upload.wikimedia.org/wikipedia/commons/7/7c/K-means_convergence_to_a_local_minimum.png" width="100%" height="500"&gt;&lt;/iframe&gt;
+
+
+---
+
+## wholesale Data
+
+
+
+![](index_files/figure-html/get_pairs-1.png)&lt;!-- --&gt;
+
+
+---
+
+## `stats::kmeans`
+
+
+```r
+km1 &lt;- kmeans(wholesale[ , -(1:2)], 3)
+str(km1)
+```
+
+```
+List of 9
+ $ cluster     : int [1:440] 1 1 1 1 3 1 1 1 1 2 ...
+ $ centers     : num [1:3, 1:6] 8253 8000 35941 3825 18511 ...
+  ..- attr(*, "dimnames")=List of 2
+  .. ..$ : chr [1:3] "1" "2" "3"
+  .. ..$ : chr [1:6] "Fresh" "Milk" "Grocery" "Frozen" ...
+ $ totss       : num 1.58e+11
+ $ withinss    : num [1:3] 2.82e+10 2.64e+10 2.58e+10
+ $ tot.withinss: num 8.03e+10
+ $ betweenss   : num 7.73e+10
+ $ size        : int [1:3] 330 50 60
+ $ iter        : int 3
+ $ ifault      : int 0
+ - attr(*, "class")= chr "kmeans"
+```
+
+---
+
+The centroids found are:
+
+
+```r
+km1$centers
+```
+
+```
+     Fresh      Milk   Grocery   Frozen Detergents_Paper Delicassen
+1  8253.47  3824.603  5280.455 2572.661         1773.058   1137.497
+2  8000.04 18511.420 27573.900 1996.680        12407.360   2252.020
+3 35941.40  6044.450  6288.617 6713.967         1039.667   3049.467
+```
+
+
+---
+
+## wholesale Data clustered
+
+![](index_files/figure-html/unnamed-chunk-10-1.png)&lt;!-- --&gt;
+
+---
+
+## How many clusters?
+
+![](index_files/figure-html/unnamed-chunk-11-1.png)&lt;!-- --&gt;
+
+
+
+---
+
+## Category sales by cluster
+
+![](index_files/figure-html/unnamed-chunk-12-1.png)&lt;!-- --&gt;
+
+
+---
+class: inverse, middle
+
+# Categorical data &amp; missing data
+
+We generalize the K-means approach.
+
+---
+
+## Clustering with categorical data
+
+.pull-left[
+
+
+```
+    war fly ver  end  gro hai
+ant  No  No  No   No  Yes  No
+bee  No Yes  No   No  Yes Yes
+cat Yes  No Yes   No   No Yes
+cpl  No  No  No   No   No Yes
+chi Yes  No Yes  Yes  Yes Yes
+cow Yes  No Yes   No  Yes Yes
+duc Yes Yes Yes   No  Yes  No
+eag Yes Yes Yes  Yes   No  No
+ele Yes  No Yes  Yes  Yes  No
+fly  No Yes  No   No   No  No
+fro  No  No Yes  Yes &lt;NA&gt;  No
+her  No  No Yes   No  Yes  No
+lio Yes  No Yes &lt;NA&gt;  Yes Yes
+liz  No  No Yes   No   No  No
+lob  No  No  No   No &lt;NA&gt;  No
+man Yes  No Yes  Yes  Yes Yes
+rab Yes  No Yes   No  Yes Yes
+sal  No  No Yes   No &lt;NA&gt;  No
+spi  No  No  No &lt;NA&gt;   No Yes
+wha Yes  No Yes  Yes  Yes  No
+```
+]
+
+.pull-right[
+
+&lt;iframe src="https://stat.ethz.ch/R-manual/R-devel/library/cluster/html/animals.html" height="500" width="100%"&gt;&lt;/iframe&gt;
+
+]
+
+
+
+---
+
+## Gower distance
+
+Let's compare spider and cow: 
+
+
+```r
+animals[c("spi", "cow"), ]
+```
+
+```
+    war fly ver end gro hai
+spi   1   1   1  NA   1   2
+cow   2   1   2   1   2   2
+```
+
++ How many non-matching categorical variables are there? 
++ Divide by number of comparisons that can be made. 
+
+We get `\(d({\rm spi}, {\rm cow}) = 3/5 = 0.6\)`. 
+
+--
+
+Calculate this for all possible pairs: 
+
+---
+
+
+```r
+df %&gt;% daisy(metric="gower") %&gt;% round(2) 
+```
+
+```
+Dissimilarities :
+     ant  bee  cat  cpl  chi  cow  duc  eag  ele  fly  fro  her  lio  liz
+bee 0.33                                                                 
+cat 0.67 0.67                                                            
+cpl 0.33 0.33 0.33                                                       
+chi 0.67 0.67 0.33 0.67                                                  
+cow 0.50 0.50 0.17 0.50 0.17                                             
+duc 0.50 0.50 0.50 0.83 0.50 0.33                                        
+eag 0.83 0.83 0.50 0.83 0.50 0.67 0.33                                   
+ele 0.50 0.83 0.50 0.83 0.17 0.33 0.33 0.33                              
+fly 0.33 0.33 0.67 0.33 1.00 0.83 0.50 0.50 0.83                         
+fro 0.40 0.80 0.60 0.60 0.40 0.60 0.60 0.40 0.20 0.60                    
+her 0.17 0.50 0.50 0.50 0.50 0.33 0.33 0.67 0.33 0.50 0.20               
+lio 0.60 0.60 0.20 0.60 0.00 0.00 0.40 0.60 0.20 1.00 0.50 0.40          
+liz 0.33 0.67 0.33 0.33 0.67 0.50 0.50 0.50 0.50 0.33 0.20 0.17 0.60     
+lob 0.00 0.40 0.60 0.20 0.80 0.60 0.60 0.80 0.60 0.20 0.40 0.20 0.75 0.20
+man 0.67 0.67 0.33 0.67 0.00 0.17 0.50 0.50 0.17 1.00 0.40 0.50 0.00 0.67
+rab 0.50 0.50 0.17 0.50 0.17 0.00 0.33 0.67 0.33 0.83 0.60 0.33 0.00 0.50
+sal 0.20 0.60 0.40 0.40 0.60 0.40 0.40 0.60 0.40 0.40 0.20 0.00 0.50 0.00
+spi 0.40 0.40 0.40 0.00 0.60 0.60 1.00 0.80 0.80 0.40 0.50 0.60 0.60 0.40
+wha 0.50 0.83 0.50 0.83 0.17 0.33 0.33 0.33 0.00 0.83 0.20 0.33 0.20 0.50
+     lob  man  rab  sal  spi
+bee                         
+cat                         
+cpl                         
+chi                         
+cow                         
+duc                         
+eag                         
+ele                         
+fly                         
+fro                         
+her                         
+lio                         
+liz                         
+lob                         
+man 0.80                    
+rab 0.60 0.17               
+sal 0.20 0.60 0.40          
+spi 0.25 0.60 0.60 0.50     
+wha 0.60 0.17 0.33 0.40 0.80
+
+Metric :  mixed ;  Types = N, N, N, N, N, N 
+Number of objects : 20
+```
+
+---
+
+## Medoids
+
+Given a clustering, a **medoid** `\(m_k\)` of cluster `\(k\)` 
+is an _observation_ that has the smallest summed distance to all other 
+observations in that cluster. 
+
+That is, `\(m_k\)` is the `\(x_j\)` that satisfies `\(j \in C_k\)` and that minimizes 
+
+`$$\sum_{i \in C_k} d(x_j, x_i).$$`
+
+(In 1-D data, a medoid is sort of the same as the **median**.)
+
+---
+
+## Medoids
+
+![](index_files/figure-html/unnamed-chunk-15-1.png)&lt;!-- --&gt;
+
+
+
+---
+
+## K-medoids algorithm
+
+&gt; 1. Randomly assign a number, from `\(1\)` to `\(K\)`, to each of the observations.
+These serve as initial cluster assignments for the observations. 
+
+&gt; 2. Iterate until the cluster assignments stop changing:
+
+&gt;   (a) For each of the `\(K\)` clusters, compute the cluster medoid `\(m_k\)`, i.e. the observation with the smallest summed distance to all other observations in the cluster.
+
+&gt;   (b) Assign each observation `\(x_n\)` to the cluster `\(k\)` whose medoid `\(m_k\)` is the closest.
+
+--
+
+Again, neither (a) nor (b) can increase the objective function.
+
+* `\(m_k\)` minimizes `\(\sum_{i \in C_k} d(m_k, x_i)\)`
+* Overall sum of squared distances can only decrease if each observation is assigned to its nearest medoid. 
+
+
+---
+
+## K-means vs K-medoids
+
++ K-medoids works with _any_ distance function
++ The computational complexity of K-means is `\(\mathcal O(N)\)`, whereas for K-medoids it is `\(\mathcal O(N^2)\)`. 
+
+The latter means that if you double the size of the dataset `\(N \to 2N\)`, then K-means will need roughly double the computational steps, whereas 
+K-medoids will need 4 times as many. This is problematic for large datasets.
+
+
+---
+
+## `cluster::pam`
+
+The function `cluster::pam` ("Partitioning Around Medoids") sort of implements K-medoids:
+
+
+```r
+(pam_animal &lt;- (daisy_animal &lt;- df %&gt;% daisy(metric="gower")) %&gt;% pam(4))
+```
+
+```
+Medoids:
+     ID        
+[1,] "15" "lob"
+[2,] "13" "lio"
+[3,] "20" "wha"
+[4,] "18" "sal"
+Clustering vector:
+ant bee cat cpl chi cow duc eag ele fly fro her lio liz lob man rab sal 
+  1   1   2   1   2   2   3   3   3   1   4   4   2   4   1   2   2   4 
+spi wha 
+  1   3 
+Objective function:
+    build      swap 
+0.1133333 0.1058333 
+
+Available components:
+[1] "medoids"    "id.med"     "clustering" "objective"  "isolation" 
+[6] "clusinfo"   "silinfo"    "diss"       "call"      
+```
+
+---
+
+## Medoid animals
+
+The medoid animals are
+
+
+```r
+animals[pam_animal$medoids, ]
+```
+
+```
+    war fly ver end gro hai
+lob   1   1   1   1  NA   1
+lio   2   1   2  NA   2   2
+wha   2   1   2   2   2   1
+sal   1   1   2   1  NA   1
+```
+
+and the clusters of the animals are 
+
+
+```r
+sort(pam_animal$clustering)
+```
+
+```
+ant bee cpl fly lob spi cat chi cow lio man rab duc eag ele wha fro her 
+  1   1   1   1   1   1   2   2   2   2   2   2   3   3   3   3   4   4 
+liz sal 
+  4   4 
+```
+
+---
+
+## Silhouettes
+
+For each observation `\(i\)`, the silhouette width `\(s(i)\)` is defined as follows: 
+
++ Put `\(a(i) =\)` average dissimilarity between `\(i\)` and all other points of the cluster to which `\(i\)` belongs (if `\(i\)` is the only observation in its cluster, `\(s(i) = 0\)` without further calculations). 
++ For all other clusters `\(C\)`, put `\(d(i,C) =\)` average dissimilarity of `\(i\)` to all observations of `\(C\)`. 
++ The smallest of these `\(d(i,C)\)` is `\(b(i) := \min_C d(i,C)\)`, and can be seen as the dissimilarity between `\(i\)` and its "neighbor" cluster, i.e., the nearest one to which it does not belong. 
++ Finally,
+`$$s(i) := \frac{b(i) - a(i)}{\max\{a(i), b(i)\}}$$`
+
+&gt; Note: 
+
+&gt; + `\(-1 \le s(i) \le +1\)` always.  
+&gt; + Values near +1 (resp. 0, resp. -1) mean the medoid is much closer (resp. equally close, resp. further away) than the average neighbouring cluster. 
+
+---
+
+
+```r
+pam_animal %&gt;% plot()
+```
+
+![](index_files/figure-html/unnamed-chunk-19-1.png)&lt;!-- --&gt;
+
+
+Average silhouette width can be used as a quality measure for the clustering.
+
+---
+
+## `sapply`
+
+Write a function that maps the output of `pam` to the silhouette width:
+
+
+```r
+get_sil_width &lt;- function(K) {
+  pam_obj &lt;- df %&gt;% daisy(metric = "gower") %&gt;% pam(K)
+  pam_obj$silinfo$avg.width %&gt;% round(2)
+}
+```
+
+Apply this function to `2:10` = 2, 3, 4, 5, 6, 7, 8, 9, 10:
+
+
+```r
+sapply(2:10, get_sil_width)
+```
+
+```
+[1] 0.46 0.44 0.47 0.48 0.45 0.45 0.50 0.50 0.55
+```
+
+The "best" clustering with `\(K=3\)` is below (I prefer `\(K=4\)`):
+
+
+```r
+(df %&gt;% daisy(metric = "gower") %&gt;% pam(3))$clustering %&gt;% sort()
+```
+
+```
+ant bee cpl fly her liz lob sal spi cat chi cow lio man rab duc eag ele 
+  1   1   1   1   1   1   1   1   1   2   2   2   2   2   2   3   3   3 
+fro wha 
+  3   3 
+```
+
+
+---
+
+## Clustering mixed (categorical and continuous) data
+
+The Gower distance on continuous continuous variables is defined by 
+transformation to the interval `\([0,1]\)`:
+
++ subtract the minimum value
++ divide by the range, e.g.
+
+
+```r
+x &lt;- wholesale$Milk
+x_trans &lt;- (x - min(x)) / (max(x) - min(x)) 
+data.frame(Milk = x_trans) %&gt;% ggplot(aes(x=Milk)) + geom_histogram(fill="gray")
+```
+
+![](index_files/figure-html/unnamed-chunk-23-1.png)&lt;!-- --&gt;
+
+---
+
+## Full wholesale data
+
+
+```r
+daisy_wholesale &lt;- wholesale %&gt;% daisy("gower")
+(pam_wholesale &lt;- daisy_wholesale %&gt;% pam(3)) %&gt;% plot()
+```
+
+![](index_files/figure-html/unnamed-chunk-24-1.png)&lt;!-- --&gt;
+
+
+---
+
+
+```r
+wholesale$k &lt;- factor(pam_wholesale$clustering)
+wholesale %&gt;% GGally::ggpairs(aes(col=k, alpha = 0.5))
+```
+
+![](index_files/figure-html/mixture_clusters-1.png)&lt;!-- --&gt;
+
+
+---
+
+## Weighting variables 
+
+By default, the gower distance weights all variables equally.
+Here is the cluster assignment with weights 0.2 for Channel and Region, and 0.1 for the rest:
+
+![](index_files/figure-html/reweight-1.png)&lt;!-- --&gt;
+
+
+---
+class: middle, inverse
+
+# Hierarchical clustering
+
+Two approaches: 
+
++ Bottom-up, or agglomerative clustering
++ Top-down, or divisive clustering
+
+We discuss the former. 
+
+
+---
+
+## Agglomerative Clustering
+
+&gt; 1. Begin with `\(N\)` observations and a measure (such as Euclidean or Gower distance) of all the `\(N(N-1)/2\)` pairwise dissimilarities. Treat each observation as its own cluster. 
+&gt; 2. For `\(i = N,N−1,\ldots ,2\)`:
+
+&gt;   (a) Examine all pairwise inter-cluster dissimilarities among the `\(i\)` clusters and identify the pair of clusters that are least dissimilar (that is, most similar). Fuse these two clusters. The dissimilarity between these two clusters indicates the height in the dendrogram at which the fusion should be placed.
+
+&gt;   (b) Compute the new pairwise inter-cluster dissimilarities among the `\(i − 1\)` remaining clusters.
+
+
+---
+
+## Dissimilarity between clusters
+
++ "Complete": 
+Maximal intercluster dissimilarity. Compute all pairwise dissimilarities between the observations in cluster A and the observations in cluster B, and record the largest of these dissimilarities.
++ "Single": 
+Minimal intercluster dissimilarity. Compute all pairwise dissimilarities between the observations in cluster A and the observations in cluster B, and record the smallest of these dissimilarities. Single linkage can result in extended, trailing clusters in which single observations are fused one-at-a-time.
++ "Average": 
+Mean intercluster dissimilarity. Compute all pairwise dissimilarities between the observations in cluster A and the observations in cluster B, and record the average of these dissimilarities.
+
+---
+
+
+```r
+daisy_animal %&gt;% agnes(method = "complete") %&gt;% plot(which.plots=2)
+```
+
+![](index_files/figure-html/unnamed-chunk-25-1.png)&lt;!-- --&gt;
+
+For plotting details, look up `?plot.agnes`.
+
+
+---
+
+## R packages on clustering 
+
+&lt;iframe src="https://cran.r-project.org/web/views/Cluster.html" height="500" width="100%"&gt;&lt;/iframe&gt; 
+
+
+---
+class: inverse, middle
+
+## References
+
+1. [Introduction to Statistical Learning in R](https://www-bcf.usc.edu/~gareth/ISL/), Section 10.3
+
+2. `help(package = "cluster")` for documentation on the R package `cluster`
+    </textarea>
+<script src="https://remarkjs.com/downloads/remark-latest.min.js"></script>
+<script>var slideshow = remark.create({
+"highlightStyle": "github",
+"highlightLines": true,
+"countIncrementalSlides": false
+});
+if (window.HTMLWidgets) slideshow.on('afterShowSlide', function (slide) {
+  window.dispatchEvent(new Event('resize'));
+});
+(function() {
+  var d = document, s = d.createElement("style"), r = d.querySelector(".remark-slide-scaler");
+  if (!r) return;
+  s.type = "text/css"; s.innerHTML = "@page {size: " + r.style.width + " " + r.style.height +"; }";
+  d.head.appendChild(s);
+})();</script>
+
+<script>
+(function() {
+  var i, text, code, codes = document.getElementsByTagName('code');
+  for (i = 0; i < codes.length;) {
+    code = codes[i];
+    if (code.parentNode.tagName !== 'PRE' && code.childElementCount === 0) {
+      text = code.textContent;
+      if (/^\\\((.|\s)+\\\)$/.test(text) || /^\\\[(.|\s)+\\\]$/.test(text) ||
+          /^\$\$(.|\s)+\$\$$/.test(text) ||
+          /^\\begin\{([^}]+)\}(.|\s)+\\end\{[^}]+\}$/.test(text)) {
+        code.outerHTML = code.innerHTML;  // remove <code></code>
+        continue;
+      }
+    }
+    i++;
+  }
+})();
+</script>
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+(function () {
+  var script = document.createElement('script');
+  script.type = 'text/javascript';
+  script.src  = 'https://cdn.bootcss.com/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_HTMLorMML';
+  if (location.protocol !== 'file:' && /^https?:/.test(script.src))
+    script.src  = script.src.replace(/^https?:/, '');
+  document.getElementsByTagName('head')[0].appendChild(script);
+})();
+</script>
+  </body>
+</html>
